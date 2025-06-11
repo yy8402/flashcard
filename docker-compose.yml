@@ -1,0 +1,20 @@
+services:
+  image-api:
+    image: flashcard/image-api
+    runtime: nvidia
+
+  translate-api:
+    image: flashcard/translate-api
+    runtime: nvidia
+
+  tts-api:
+    image: flashcard/tts-api
+    runtime: nvidia
+  
+  web-app:
+    image: flashcard/web-app
+    volumes:
+      - ./static:/app/app/static
+    ports:
+      - "5000:5000"
+    runtime: nvidia

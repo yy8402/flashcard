@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Flashcards</title>
+  <style>
+    body { text-align: center; font-family: sans-serif; background: #f0f0f0; }
+    img { max-width: 80%; margin-top: 20px; border-radius: 10px; }
+    h2 { font-size: 2rem; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <h2 id="word"></h2>
+  <img id="image" src="" alt="vocab" />
+  <audio id="audio" hidden></audio>
+  <div style="margin-top: 16px;">
+    <button id="replay-audio" type="button">🔊</button>
+  </div>
+  <script>
+    document.getElementById('replay-audio').addEventListener('click', function() {
+      const audio = document.getElementById('audio');
+      if (audio.src) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+    });
+  </script>
+  <script>
+    (async function() {
+      let flashcards = [];
+      let index = 0;
+      let lang = 'en';
+      window.settings = {};
+
+      // Fetch settings
+      async function fetchSettings() {
+        try {
+          const settingsRes = await fetch('/settings');
+          if (settingsRes.ok) {
+            const settings = await settingsRes.json();
+            window.settings = settings;
+            lang = settings.language || 'en';
+          } else {
+            window.settings = {};
+            lang = 'en';
+          }
+        } catch (e) {
+          window.settings = {};
+          lang = 'en';
+        }
+      }
+
+      // Load data
+      async function loadData() {
+        // Always get lang from settings
+        lang = (window.settings && window.settings.language) ? window.settings.language : 'en';
+        try {
+          const res = await fetch(`/api/data?lang=${lang}`);
+          if (!res.ok) throw new Error('Failed to fetch data');
+          const words = await res.json();
+          flashcards = words.map((word) => ({
+            languages: {
+              [lang]: {
+                word,
+                audio: '',
+                image: ''
+              }
+            }
+          }));
+          index = 0;
+          showCard();
+        } catch (e) {
+          document.getElementById('word').textContent = 'Failed to load flashcards.';
+        }
+      }
+
+      // Show card
+      async function showCard() {
+        // Always get lang from settings
+        lang = (window.settings && window.settings.language) ? window.settings.language : 'en';
+        if (flashcards.length === 0) return;
+
+        const card = flashcards[index % flashcards.length];
+        const word = card.languages[lang].word;
+        const image = document.getElementById('image');
+        const wordEl = document.getElementById('word');
+        const audio = document.getElementById('audio');
+        const settings = window.settings || {};
+
+        // Show word and word count only if required by settings
+        const showWord = settings.showWord ?? false;
+        const showWordCount = settings.showWordCount ?? false;
+
+        if (showWord) {
+          wordEl.textContent = word;
+          if (showWordCount) {
+            wordEl.textContent += ` (${(index % flashcards.length) + 1}/${flashcards.length})`;
+          }
+        } else {
+          wordEl.textContent = '';
+        }
+
+        // Fetch image and audio only if not already loaded
+        if (!card.languages[lang].image || !card.languages[lang].audio) {
+          try {
+            const [audioRes, imageRes] = await Promise.all([
+              fetch(`/api/audio?word=${encodeURIComponent(word)}&lang=${lang}`),
+              fetch(`/api/image?word=${encodeURIComponent(word)}&lang=${lang}`)
+            ]);
+            card.languages[lang].audio = '';
+            card.languages[lang].image = '';
+            if (audioRes.ok) {
+              const audioBlob = await audioRes.blob();
+              card.languages[lang].audio = URL.createObjectURL(audioBlob);
+            }
+            if (imageRes.ok) {
+              const imageBlob = await imageRes.blob();
+              card.languages[lang].image = URL.createObjectURL(imageBlob);
+            }
+          } catch (e) {
+            card.languages[lang].audio = '';
+            card.languages[lang].image = '';
+          }
+        }
+
+        image.src = card.languages[lang].image || '';
+        image.alt = word;
+        audio.src = card.languages[lang].audio || '';
+
+        // Play pronunciation only if audio is available
+        if (audio.src) {
+          audio.play().catch(() => {});
+        }
+      }
+
+      // Prevent rapid clicks from causing issues
+      let isTransitioning = false;
+      document.body.addEventListener('click', (e) => {
+        if (e.target.id === 'replay-audio' || isTransitioning) return;
+        isTransitioning = true;
+        index++;
+        showCard().finally(() => { isTransitioning = false; });
+      });
+
+      await fetchSettings();
+      await loadData();
+    })();
+  </script>
+</body>
+</html>
